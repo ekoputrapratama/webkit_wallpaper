@@ -5,6 +5,7 @@ A Linux desktop wallpaper app that renders web pages and WebGL shaders as your b
 ![License](https://img.shields.io/badge/license-MIT-blue)
 ![Python](https://img.shields.io/badge/python-3.8+-green)
 ![GTK](https://img.shields.io/badge/GTK-3-orange)
+[![AUR package](https://img.shields.io/aur/version/webkit-wallpaper)](https://aur.archlinux.org/packages/webkit-wallpaper)
 
 ## Support this project
 
@@ -23,19 +24,17 @@ A Linux desktop wallpaper app that renders web pages and WebGL shaders as your b
 
 ## Installation
 
-### System Dependencies
-
-**Arch Linux:**
+### Arch Linux (AUR)
 
 ```bash
-sudo pacman -S python-gobject gtk3 webkit2gtk-4.1
+# Using yay
+yay -S webkit-wallpaper
 
-# For Wayland (Sway, Hyprland, COSMIC, KDE)
-sudo pacman -S gtk-layer-shell
-
-# For system tray icon
-yay -S libayatana-appindicator
+# Or using paru
+paru -S webkit-wallpaper
 ```
+
+### System Dependencies
 
 **Debian / Ubuntu:**
 
@@ -50,7 +49,7 @@ sudo apt install gir1.2-gtklayershell-0.1
 ### Run
 
 ```bash
-cd sample-test
+cd webkit_wallpaper
 python3 run.py
 ```
 
