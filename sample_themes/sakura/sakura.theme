@@ -1,0 +1,7 @@
+[Theme]
+Name=Sakura
+Description=A webgl sakura background
+Author=Eko Putra Pratama
+Version=1.0
+Thumbnail=thumbnail.png
+Entry=index.html

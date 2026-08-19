@@ -1,0 +1,7 @@
+[Theme]
+Name=Rotating Rubix
+Description=A webgl of rotating rubic
+Author=Eko Putra Pratama
+Version=1.0
+Thumbnail=preview.gif
+Entry=index.html

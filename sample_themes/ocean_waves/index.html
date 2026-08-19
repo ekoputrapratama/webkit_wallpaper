@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  * { margin: 0; padding: 0; }
+  body {
+    width: 100vw; height: 100vh; overflow: hidden;
+    background: linear-gradient(180deg, #0a1628 0%, #0d2847 30%, #1a5276 60%, #2e86c1 80%, #85c1e9 100%);
+    background-size: 100% 300%;
+    animation: wave 12s ease-in-out infinite alternate;
+  }
+  .orb {
+    position: absolute; border-radius: 50%; filter: blur(60px); opacity: 0.3;
+    animation: drift 20s ease-in-out infinite alternate;
+  }
+  .orb:nth-child(1) { width: 400px; height: 400px; background: #1a5276; top: 10%; left: 20%; }
+  .orb:nth-child(2) { width: 300px; height: 300px; background: #2e86c1; top: 40%; right: 10%; animation-delay: -5s; }
+  .orb:nth-child(3) { width: 350px; height: 350px; background: #85c1e9; bottom: 10%; left: 40%; animation-delay: -10s; }
+  @keyframes wave {
+    0% { background-position: 100% 0%; }
+    100% { background-position: 100% 100%; }
+  }
+  @keyframes drift {
+    0% { transform: translate(0, 0) scale(1); }
+    100% { transform: translate(80px, -40px) scale(1.2); }
+  }
+</style>
+</head>
+<body>
+  <div class="orb"></div>
+  <div class="orb"></div>
+  <div class="orb"></div>
+</body>
+</html>

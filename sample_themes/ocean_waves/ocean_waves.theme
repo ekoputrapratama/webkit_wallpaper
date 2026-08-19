@@ -1,0 +1,7 @@
+[Theme]
+Name=Ocean Waves
+Description=Calming CSS-animated ocean gradient
+Author=WebWallpaper
+Version=1.0
+Thumbnail=thumbnail.svg
+Entry=index.html
