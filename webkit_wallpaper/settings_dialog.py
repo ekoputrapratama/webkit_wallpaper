@@ -7,6 +7,7 @@ gi.require_version("Gtk", "3.0")
 from gi.repository import Gdk, GdkPixbuf, Gtk
 
 from webkit_wallpaper import themes
+from webkit_wallpaper.wallpaper_window import get_monitor_list
 
 THUMB_SIZE = 48
 
@@ -83,6 +84,32 @@ class SettingsDialog(Gtk.Window):
         self.load_button = Gtk.Button(label="Load")
         self.load_button.connect("clicked", self._on_load_url)
         url_box.pack_start(self.load_button, False, False, 0)
+
+        # Display selection
+        display_frame = Gtk.Frame(label="Display")
+        vbox.pack_start(display_frame, False, False, 0)
+
+        display_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        display_box.set_margin_start(8)
+        display_box.set_margin_end(8)
+        display_box.set_margin_top(6)
+        display_box.set_margin_bottom(6)
+        display_frame.add(display_box)
+
+        self._monitors = get_monitor_list()
+        self.monitor_combo = Gtk.ComboBoxText()
+        self.monitor_combo.append_text("Default")
+        for mon in self._monitors:
+            self.monitor_combo.append_text(mon["label"])
+
+        saved_monitor = self.app.config.get("monitor", -1)
+        if saved_monitor >= 0 and saved_monitor < len(self._monitors):
+            self.monitor_combo.set_active(saved_monitor + 1)
+        else:
+            self.monitor_combo.set_active(0)
+
+        self.monitor_combo.connect("changed", self._on_monitor_changed)
+        display_box.pack_start(self.monitor_combo, True, True, 0)
 
         # Themes section
         theme_frame = Gtk.Frame(label="Themes — drop .zip to install")
@@ -249,6 +276,14 @@ class SettingsDialog(Gtk.Window):
     def _on_hwaccel_toggled(self, check):
         self.app.wallpaper.set_hardware_accel(check.get_active())
 
+    def _on_monitor_changed(self, combo):
+        active = combo.get_active()
+        if active <= 0:
+            monitor_index = -1
+        else:
+            monitor_index = active - 1
+        self.app.wallpaper.set_monitor(monitor_index)
+
     def _update_status(self):
         active_theme = self.app.config.get("active_theme", "")
         url = self.app.config.get("url", "")
@@ -269,6 +304,20 @@ class SettingsDialog(Gtk.Window):
     def present(self):
         self.url_entry.set_text(self.app.config.get("url", ""))
         self._populate_themes()
+        self._refresh_monitor_combo()
         self._update_status()
         self.show_all()
         super().present()
+
+    def _refresh_monitor_combo(self):
+        self.monitor_combo.get_model().clear()
+        self.monitor_combo.append_text("Default")
+        self._monitors = get_monitor_list()
+        for mon in self._monitors:
+            self.monitor_combo.append_text(mon["label"])
+
+        saved_monitor = self.app.config.get("monitor", -1)
+        if saved_monitor >= 0 and saved_monitor < len(self._monitors):
+            self.monitor_combo.set_active(saved_monitor + 1)
+        else:
+            self.monitor_combo.set_active(0)

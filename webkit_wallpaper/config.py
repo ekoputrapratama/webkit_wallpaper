@@ -12,6 +12,7 @@ DEFAULT_CONFIG = {
     "hardware_accel": True,
     "autostart_enabled": False,
     "zoom": 1.0,
+    "monitor": -1,
 }
 
 

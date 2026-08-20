@@ -64,12 +64,42 @@ FALLBACK_HTML = """<!DOCTYPE html>
 </html>"""
 
 
+def get_monitor_list():
+    display = Gdk.Display.get_default()
+    if display is None:
+        return []
+    monitors = []
+    for i in range(display.get_n_monitors()):
+        mon = display.get_monitor(i)
+        geo = mon.get_geometry()
+        name = mon.get_model() or mon.get_connector_type() or f"Monitor {i}"
+        plug = ""
+        try:
+            screen = Gdk.Display.get_default().get_default_screen()
+            plug = screen.get_monitor_plug_name(i) or ""
+        except Exception:
+            pass
+        label = name if not plug else f"{name} ({plug})"
+        monitors.append({
+            "index": i,
+            "name": name,
+            "plug": plug,
+            "label": label,
+            "x": geo.x,
+            "y": geo.y,
+            "width": geo.width,
+            "height": geo.height,
+        })
+    return monitors
+
+
 class WallpaperWindow(Gtk.Window):
     def __init__(self, config, on_url_change=None):
         super().__init__(title="WebWallpaper")
         self.config = config
         self.on_url_change = on_url_change
         self._paused = False
+        self._monitor_index = config.get("monitor", -1)
 
         self.set_decorated(False)
         self.set_app_paintable(True)
@@ -103,6 +133,7 @@ class WallpaperWindow(Gtk.Window):
                 ]:
                     GtkLayerShell.set_anchor(self, edge, True)
                 self._platform = "layer-shell"
+                self._apply_layer_shell_monitor()
                 print("[WebWallpaper] Using layer-shell (Wayland BACKGROUND layer)")
             except Exception as e:
                 print(f"[WebWallpaper] layer-shell init failed: {e}")
@@ -122,20 +153,27 @@ class WallpaperWindow(Gtk.Window):
 
     def _size_to_screen(self):
         screen = self.get_screen()
-        if screen.get_n_monitors() > 1:
+        display = screen.get_display()
+        n_monitors = display.get_n_monitors()
+        monitor_idx = self._monitor_index
+
+        if monitor_idx >= 0 and monitor_idx < n_monitors:
+            geo = display.get_monitor(monitor_idx).get_geometry()
+            x, y, w, h = geo.x, geo.y, geo.width, geo.height
+        elif n_monitors > 1:
             x = 0
             y = 0
             w = 0
             h = 0
-            for i in range(screen.get_n_monitors()):
-                geo = screen.get_monitor_geometry(i)
+            for i in range(n_monitors):
+                geo = display.get_monitor(i).get_geometry()
                 left = min(x, geo.x)
                 top = min(y, geo.y)
                 right = max(x + w, geo.x + geo.width)
                 bottom = max(y + h, geo.y + geo.height)
                 x, y, w, h = left, top, right - left, bottom - top
         else:
-            geo = screen.get_monitor_geometry(0)
+            geo = display.get_monitor(0).get_geometry()
             x, y, w, h = geo.x, geo.y, geo.width, geo.height
         self.move(x, y)
         self.resize(w, h)
@@ -143,6 +181,35 @@ class WallpaperWindow(Gtk.Window):
     def _on_configure(self, widget, event):
         if self._platform in ("x11", "wayland-fallback"):
             self._size_to_screen()
+
+    def set_monitor(self, monitor_index):
+        self._monitor_index = monitor_index
+        self.config["monitor"] = monitor_index
+        if self._platform == "layer-shell":
+            self._apply_layer_shell_monitor()
+        else:
+            self._size_to_screen()
+            self.queue_resize()
+
+    def _apply_layer_shell_monitor(self):
+        if not HAS_LAYER_SHELL:
+            return
+        display = Gdk.Display.get_default()
+        if display is None:
+            return
+        n_monitors = display.get_n_monitors()
+        if self._monitor_index >= 0 and self._monitor_index < n_monitors:
+            monitor = display.get_monitor(self._monitor_index)
+        else:
+            monitor = display.get_monitor(0)
+        GtkLayerShell.set_monitor(self, monitor)
+        for edge in [
+            GtkLayerShell.Edge.LEFT,
+            GtkLayerShell.Edge.RIGHT,
+            GtkLayerShell.Edge.TOP,
+            GtkLayerShell.Edge.BOTTOM,
+        ]:
+            GtkLayerShell.set_anchor(self, edge, True)
 
     def _setup_webview(self):
         self.web_view = WebKit2.WebView.new()
