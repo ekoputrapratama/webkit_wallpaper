@@ -10,6 +10,7 @@ DEFAULT_CONFIG = {
     "applied_store_id": "",
     "mute_audio": True,
     "hardware_accel": True,
+    "fps_cap": 0,
     "autostart_enabled": False,
     "zoom": 1.0,
     "monitor": -1,

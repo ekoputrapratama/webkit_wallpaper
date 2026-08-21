@@ -1,5 +1,23 @@
-import sys
+import os
 import signal
+import sys
+
+
+def _is_gnome_wayland():
+    session = os.environ.get("XDG_SESSION_TYPE", "")
+    desktop = os.environ.get("XDG_CURRENT_DESKTOP", "").lower()
+    return session == "wayland" and "gnome" in desktop
+
+
+def _apply_platform_workarounds():
+    if not _is_gnome_wayland():
+        return
+    if not os.environ.get("DISPLAY"):
+        return
+    os.environ.setdefault("GDK_BACKEND", "x11")
+
+
+_apply_platform_workarounds()
 
 import gi
 

@@ -141,6 +141,18 @@ class SettingsDialog(Gtk.Window):
         self.hwaccel_check.connect("toggled", self._on_hwaccel_toggled)
         settings_box.pack_start(self.hwaccel_check, False, False, 0)
 
+        self.fps_values = [0, 60, 30, 24, 15]
+        self.fps_combo = Gtk.ComboBoxText()
+        for label in ["FPS: Uncapped", "FPS: 60", "FPS: 30", "FPS: 24", "FPS: 15"]:
+            self.fps_combo.append_text(label)
+        saved_fps = int(self.app.config.get("fps_cap", 0) or 0)
+        if saved_fps in self.fps_values:
+            self.fps_combo.set_active(self.fps_values.index(saved_fps))
+        else:
+            self.fps_combo.set_active(0)
+        self.fps_combo.connect("changed", self._on_fps_changed)
+        settings_box.pack_start(self.fps_combo, False, False, 0)
+
         # Status + close
         bottom_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         vbox.pack_start(bottom_box, False, False, 0)
@@ -276,6 +288,11 @@ class SettingsDialog(Gtk.Window):
     def _on_hwaccel_toggled(self, check):
         self.app.wallpaper.set_hardware_accel(check.get_active())
 
+    def _on_fps_changed(self, combo):
+        active = combo.get_active()
+        if 0 <= active < len(self.fps_values):
+            self.app.wallpaper.set_fps_cap(self.fps_values[active])
+
     def _on_monitor_changed(self, combo):
         active = combo.get_active()
         if active <= 0:
@@ -310,14 +327,18 @@ class SettingsDialog(Gtk.Window):
         super().present()
 
     def _refresh_monitor_combo(self):
-        self.monitor_combo.get_model().clear()
-        self.monitor_combo.append_text("Default")
-        self._monitors = get_monitor_list()
-        for mon in self._monitors:
-            self.monitor_combo.append_text(mon["label"])
+        self.monitor_combo.handler_block_by_func(self._on_monitor_changed)
+        try:
+            self.monitor_combo.get_model().clear()
+            self.monitor_combo.append_text("Default")
+            self._monitors = get_monitor_list()
+            for mon in self._monitors:
+                self.monitor_combo.append_text(mon["label"])
 
-        saved_monitor = self.app.config.get("monitor", -1)
-        if saved_monitor >= 0 and saved_monitor < len(self._monitors):
-            self.monitor_combo.set_active(saved_monitor + 1)
-        else:
-            self.monitor_combo.set_active(0)
+            saved_monitor = self.app.config.get("monitor", -1)
+            if saved_monitor >= 0 and saved_monitor < len(self._monitors):
+                self.monitor_combo.set_active(saved_monitor + 1)
+            else:
+                self.monitor_combo.set_active(0)
+        finally:
+            self.monitor_combo.handler_unblock_by_func(self._on_monitor_changed)

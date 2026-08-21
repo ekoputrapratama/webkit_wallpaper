@@ -2,5 +2,11 @@
 # sudo apt install python3-gi gir1.2-gtk-3.0 gir1.2-webkit2-4.1 \
 #     gir1.2-ayatanaappindicator3-0.1
 #
+# Fallback (GTK-free appindicator, if the above is unavailable):
+# sudo apt install gir1.2-ayatanaappindicatorglib-2.0
+#
+# Arch Linux: gnome-shell-extension-appindicator (GNOME) or
+# libayatana-appindicator from the repos
+#
 # For Wayland (Sway, Hyprland, KDE Wayland):
 # sudo apt install gir1.2-gtklayershell-0.1

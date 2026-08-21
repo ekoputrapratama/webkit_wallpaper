@@ -2,6 +2,8 @@ import os
 
 import gi
 
+from webkit_wallpaper import config as config_store
+
 gi.require_version("Gtk", "3.0")
 gi.require_version("WebKit2", "4.1")
 from gi.repository import Gdk, GLib, Gtk, WebKit2
@@ -33,6 +35,32 @@ def has_layer_shell_support():
 def is_gnome():
     desktop = os.environ.get("XDG_CURRENT_DESKTOP", "").lower()
     return "gnome" in desktop
+
+
+FPS_CAP_SCRIPT = """(function() {
+  if (window.__wwRafCapped) return;
+  window.__wwRafCapped = true;
+  var cap = %d;
+  if (!cap || cap <= 0) return;
+  var interval = 1000 / cap;
+  var states = new Map();
+  var nativeRAF = window.requestAnimationFrame.bind(window);
+  window.requestAnimationFrame = function(cb) {
+    return nativeRAF(function retry(timestamp) {
+      var now = performance.now();
+      var next = states.get(cb) || 0;
+      if (now + 1 >= next) {
+        if (now - next > interval * 2) {
+          next = now;
+        }
+        states.set(cb, next + interval);
+        cb(timestamp);
+      } else {
+        nativeRAF(retry);
+      }
+    });
+  };
+})();"""
 
 
 FALLBACK_HTML = """<!DOCTYPE html>
@@ -185,6 +213,7 @@ class WallpaperWindow(Gtk.Window):
     def set_monitor(self, monitor_index):
         self._monitor_index = monitor_index
         self.config["monitor"] = monitor_index
+        config_store.save(self.config)
         if self._platform == "layer-shell":
             self._apply_layer_shell_monitor()
         else:
@@ -230,6 +259,9 @@ class WallpaperWindow(Gtk.Window):
             settings.set_hardware_acceleration_policy(
                 WebKit2.HardwareAccelerationPolicy.NEVER
             )
+
+        self._fps_cap = int(self.config.get("fps_cap", 0) or 0)
+        self._apply_fps_cap_script()
 
         self.web_view.connect("web-process-crashed", self._on_web_crash)
         self.web_view.connect("load-failed", self._on_load_failed)
@@ -300,6 +332,7 @@ class WallpaperWindow(Gtk.Window):
     def set_muted(self, muted):
         self.config["mute_audio"] = muted
         self.web_view.set_is_muted(muted)
+        config_store.save(self.config)
 
     def set_hardware_accel(self, enabled):
         self.config["hardware_accel"] = enabled
@@ -309,6 +342,25 @@ class WallpaperWindow(Gtk.Window):
             else WebKit2.HardwareAccelerationPolicy.NEVER
         )
         self.web_view.get_settings().set_hardware_acceleration_policy(policy)
+        config_store.save(self.config)
+
+    def set_fps_cap(self, fps):
+        self._fps_cap = int(fps or 0)
+        self.config["fps_cap"] = self._fps_cap
+        self._apply_fps_cap_script()
+        self.reload()
+        config_store.save(self.config)
+
+    def _apply_fps_cap_script(self):
+        manager = self.web_view.get_user_content_manager()
+        manager.remove_all_scripts()
+        if self._fps_cap > 0:
+            script = WebKit2.UserScript.new(
+                FPS_CAP_SCRIPT % self._fps_cap,
+                WebKit2.UserContentInjectedFrames.ALL_FRAMES,
+                WebKit2.UserScriptInjectionTime.START,
+            )
+            manager.add_script(script)
 
     def reload(self):
         self.web_view.reload()

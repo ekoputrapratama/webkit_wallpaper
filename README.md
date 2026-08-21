@@ -42,9 +42,19 @@ paru -S webkit-wallpaper
 sudo apt install python3-gi gir1.2-gtk-3.0 gir1.2-webkit2-4.1 \
     gir1.2-ayatanaappindicator3-0.1
 
+# Fallback (GTK-free appindicator, if the above is unavailable):
+sudo apt install gir1.2-ayatanaappindicatorglib-2.0
+
 # For Wayland
 sudo apt install gir1.2-gtklayershell-0.1
 ```
+
+The tray icon uses the classic dbusmenu-based appindicator libraries first,
+since GNOME Shell, KDE, XFCE and COSMIC panels all render those. The newer
+`libayatana-appindicator-glib` is only used when the legacy ones are missing
+(its `org.gtk.Menus` protocol is not yet supported by the GNOME Shell
+AppIndicator extension). Force a backend with
+`WEBKIT_WALLPAPER_TRAY_BACKEND=glib`.
 
 ### Run
 
@@ -151,6 +161,25 @@ Your theme will appear in the store for others to install.
 **From a `.zip` file:** Open Settings → drag and drop a `.zip` onto the Themes section.
 
 **Manually:** Extract a theme folder into `~/.local/share/webkit_wallpaper/themes/`.
+
+## Troubleshooting
+
+### NVIDIA (proprietary driver)
+
+WebKitGTK's DMABUF renderer cannot allocate GBM buffers on the proprietary
+NVIDIA driver, which stalls rendering entirely. `run.py` detects NVIDIA and
+automatically sets `WEBKIT_DISABLE_DMABUF_RENDERER=1` to fall back to the
+legacy renderer. On some NVIDIA + XWayland setups frames are still copied
+through software, which costs performance at high resolutions — use the
+**FPS cap** setting in the tray menu → Settings to reduce CPU/GPU load
+(30 or 24 FPS is usually fine for a wallpaper).
+
+To override the automatic workaround, set the variable yourself before
+launching (it is never overwritten):
+
+```bash
+WEBKIT_DISABLE_DMABUF_RENDERER=0 python3 run.py
+```
 
 ## License
 
