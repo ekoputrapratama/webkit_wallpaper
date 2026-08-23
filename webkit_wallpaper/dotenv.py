@@ -6,6 +6,7 @@ _ENV = None
 def _find_env_file():
     candidates = [
         os.path.join(os.path.dirname(__file__), "..", ".env"),
+        os.path.join(os.path.dirname(__file__), ".env"),
         os.path.join(os.getcwd(), ".env"),
     ]
     for path in candidates:
