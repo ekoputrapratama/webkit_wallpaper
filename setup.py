@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="webkit_wallpaper",
-    version="0.1.0",
+    version="0.4.2",
     description="Linux desktop wallpaper powered by a webview",
     packages=find_packages(),
     # Installed as the "webkit_wallpaper" launcher script so autostart
