@@ -214,14 +214,13 @@ class WallpaperWindow(Gtk.Window):
     def _connect_display_signals(self):
         display = Gdk.Display.get_default()
         if display is not None:
-            n_monitors = display.get_n_monitors()
-            if n_monitors > 0:
-                display.connect("monitor-added", self._on_monitors_changed)
-                display.connect("monitor-removed", self._on_monitors_changed)
+            display.connect("monitor-added", self._on_monitors_changed)
+            display.connect("monitor-removed", self._on_monitors_changed)
+            if display.get_n_monitors() > 0:
                 return
         # Display not ready or no monitors yet (common during autostart
         # when kscreen applies the layout late). Retry periodically until
-        # a display with monitors appears, then connect signals normally.
+        # monitors appear, then reapply the geometry.
         self._display_retry_id = GLib.timeout_add(500, self._retry_display_setup)
 
     def _retry_display_setup(self):
@@ -230,8 +229,6 @@ class WallpaperWindow(Gtk.Window):
             return True
         if display.get_n_monitors() == 0:
             return True
-        display.connect("monitor-added", self._on_monitors_changed)
-        display.connect("monitor-removed", self._on_monitors_changed)
         if hasattr(self, "_display_retry_id"):
             GLib.source_remove(self._display_retry_id)
             del self._display_retry_id
@@ -248,6 +245,8 @@ class WallpaperWindow(Gtk.Window):
         else:
             self._size_to_screen()
             self.queue_resize()
+            if self.get_realized():
+                self.show_all()
         return False
 
     def _resolve_monitor_index(self):
