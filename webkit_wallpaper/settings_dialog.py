@@ -98,17 +98,9 @@ class SettingsDialog(Gtk.Window):
 
         self._monitors = get_monitor_list()
         self.monitor_combo = Gtk.ComboBoxText()
-        self.monitor_combo.append_text("Default")
-        for mon in self._monitors:
-            self.monitor_combo.append_text(mon["label"])
-
-        saved_monitor = self.app.config.get("monitor", -1)
-        if saved_monitor >= 0 and saved_monitor < len(self._monitors):
-            self.monitor_combo.set_active(saved_monitor + 1)
-        else:
-            self.monitor_combo.set_active(0)
-
         self.monitor_combo.connect("changed", self._on_monitor_changed)
+        self._fill_monitor_combo()
+
         display_box.pack_start(self.monitor_combo, True, True, 0)
 
         # Themes section
@@ -293,6 +285,35 @@ class SettingsDialog(Gtk.Window):
         if 0 <= active < len(self.fps_values):
             self.app.wallpaper.set_fps_cap(self.fps_values[active])
 
+    def _fill_monitor_combo(self):
+        """Populate the display combo and select the saved monitor.
+
+        Selection prefers the stable per-monitor id (connector name or
+        manufacturer+model) so the choice survives logout/login, where
+        enumeration order and count may change.
+        """
+        self.monitor_combo.handler_block_by_func(self._on_monitor_changed)
+        try:
+            self.monitor_combo.remove_all()
+            self.monitor_combo.append_text("Default")
+            for mon in self._monitors:
+                self.monitor_combo.append_text(mon["label"])
+
+            active = 0
+            saved_id = self.app.config.get("monitor_id", "") or ""
+            if saved_id:
+                for i, mon in enumerate(self._monitors):
+                    if mon["id"] == saved_id:
+                        active = i + 1
+                        break
+            else:
+                legacy = int(self.app.config.get("monitor", -1) or -1)
+                if 0 <= legacy < len(self._monitors):
+                    active = legacy + 1
+            self.monitor_combo.set_active(active)
+        finally:
+            self.monitor_combo.handler_unblock_by_func(self._on_monitor_changed)
+
     def _on_monitor_changed(self, combo):
         active = combo.get_active()
         if active <= 0:
@@ -327,18 +348,5 @@ class SettingsDialog(Gtk.Window):
         super().present()
 
     def _refresh_monitor_combo(self):
-        self.monitor_combo.handler_block_by_func(self._on_monitor_changed)
-        try:
-            self.monitor_combo.get_model().clear()
-            self.monitor_combo.append_text("Default")
-            self._monitors = get_monitor_list()
-            for mon in self._monitors:
-                self.monitor_combo.append_text(mon["label"])
-
-            saved_monitor = self.app.config.get("monitor", -1)
-            if saved_monitor >= 0 and saved_monitor < len(self._monitors):
-                self.monitor_combo.set_active(saved_monitor + 1)
-            else:
-                self.monitor_combo.set_active(0)
-        finally:
-            self.monitor_combo.handler_unblock_by_func(self._on_monitor_changed)
+        self._monitors = get_monitor_list()
+        self._fill_monitor_combo()

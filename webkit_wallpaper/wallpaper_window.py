@@ -22,19 +22,43 @@ def is_wayland():
     return os.environ.get("XDG_SESSION_TYPE") == "wayland"
 
 
+def is_gnome():
+    desktop = os.environ.get("XDG_CURRENT_DESKTOP", "").lower()
+    return "gnome" in desktop
+
+
+def is_kde():
+    desktop = os.environ.get("XDG_CURRENT_DESKTOP", "").lower()
+    return "kde" in desktop
+
+
+def _backend_preference():
+    # "auto" (default), "layer-shell" or "x11"
+    return os.environ.get("WEBKIT_WALLPAPER_BACKEND", "auto").strip().lower()
+
+
 def has_layer_shell_support():
+    pref = _backend_preference()
+    if pref == "x11":
+        return False
     if not HAS_LAYER_SHELL:
         return False
     if not is_wayland():
         return False
+    try:
+        if not GtkLayerShell.is_supported():
+            return False
+    except (AttributeError, GLib.Error):
+        return False
+    if pref == "layer-shell":
+        return True
+    # GNOME's mutter does not support wlr-layer-shell at all, so the X11
+    # fallback path (via XWayland) is used instead for desktop stacking.
+    # KDE KWin supports layer-shell natively since Plasma 5.21, so we use
+    # it for native Wayland rendering without XWayland overhead.
     if is_gnome():
         return False
     return True
-
-
-def is_gnome():
-    desktop = os.environ.get("XDG_CURRENT_DESKTOP", "").lower()
-    return "gnome" in desktop
 
 
 FPS_CAP_SCRIPT = """(function() {
@@ -97,19 +121,39 @@ def get_monitor_list():
     if display is None:
         return []
     monitors = []
+    seen_ids = {}
     for i in range(display.get_n_monitors()):
         mon = display.get_monitor(i)
         geo = mon.get_geometry()
-        name = mon.get_model() or mon.get_connector_type() or f"Monitor {i}"
+        name = mon.get_model() or f"Monitor {i}"
         plug = ""
         try:
             screen = Gdk.Display.get_default().get_default_screen()
             plug = screen.get_monitor_plug_name(i) or ""
         except Exception:
             pass
+        # Stable identity: connector name when available (X11), otherwise
+        # manufacturer+model. GTK3/Wayland exposes no connector, and plain
+        # enumeration indices are not stable across sessions (order and
+        # count can differ at each login), which made the saved selection
+        # point at another monitor or fall back to "Default".
+        if plug:
+            mid = plug
+        else:
+            try:
+                manufacturer = mon.get_manufacturer() or ""
+            except Exception:
+                manufacturer = ""
+            mid = f"{manufacturer} {name}".strip()
+        if mid in seen_ids:
+            seen_ids[mid] += 1
+            mid = f"{mid}#{seen_ids[mid]}"
+        else:
+            seen_ids[mid] = 0
         label = name if not plug else f"{name} ({plug})"
         monitors.append({
             "index": i,
+            "id": mid,
             "name": name,
             "plug": plug,
             "label": label,
@@ -127,7 +171,21 @@ class WallpaperWindow(Gtk.Window):
         self.config = config
         self.on_url_change = on_url_change
         self._paused = False
-        self._monitor_index = config.get("monitor", -1)
+        self._monitor_id = config.get("monitor_id", "") or ""
+        self._monitor_index = self._resolve_monitor_index()
+        if (
+            not self._monitor_id
+            and self._monitor_index >= 0
+            and not config.get("monitor_id")
+        ):
+            # Migrate legacy index-only setting to a stable identity.
+            monitors = get_monitor_list()
+            for m in monitors:
+                if m["index"] == self._monitor_index:
+                    self._monitor_id = m["id"]
+                    config["monitor_id"] = self._monitor_id
+                    config_store.save(config)
+                    break
 
         self.set_decorated(False)
         self.set_app_paintable(True)
@@ -144,12 +202,77 @@ class WallpaperWindow(Gtk.Window):
         self.connect("destroy", Gtk.main_quit)
         self.connect("configure-event", self._on_configure)
 
+        self._connect_display_signals()
+
+    def _on_monitors_changed(self, *_args):
+        if getattr(self, "_monitor_refresh_scheduled", False):
+            return False
+        self._monitor_refresh_scheduled = True
+        GLib.idle_add(self._reapply_monitor)
+        return False
+
+    def _connect_display_signals(self):
+        display = Gdk.Display.get_default()
+        if display is not None:
+            n_monitors = display.get_n_monitors()
+            if n_monitors > 0:
+                display.connect("monitor-added", self._on_monitors_changed)
+                display.connect("monitor-removed", self._on_monitors_changed)
+                return
+        # Display not ready or no monitors yet (common during autostart
+        # when kscreen applies the layout late). Retry periodically until
+        # a display with monitors appears, then connect signals normally.
+        self._display_retry_id = GLib.timeout_add(500, self._retry_display_setup)
+
+    def _retry_display_setup(self):
+        display = Gdk.Display.get_default()
+        if display is None:
+            return True
+        if display.get_n_monitors() == 0:
+            return True
+        display.connect("monitor-added", self._on_monitors_changed)
+        display.connect("monitor-removed", self._on_monitors_changed)
+        if hasattr(self, "_display_retry_id"):
+            GLib.source_remove(self._display_retry_id)
+            del self._display_retry_id
+        self._reapply_monitor()
+        return False
+
+    def _reapply_monitor(self):
+        self._monitor_refresh_scheduled = False
+        new_index = self._resolve_monitor_index()
+        if new_index != self._monitor_index:
+            self._monitor_index = new_index
+        if self._platform == "layer-shell":
+            self._apply_layer_shell_monitor()
+        else:
+            self._size_to_screen()
+            self.queue_resize()
+        return False
+
+    def _resolve_monitor_index(self):
+        monitors = get_monitor_list()
+        if not monitors:
+            return -1
+        if self._monitor_id:
+            for m in monitors:
+                if m["id"] == self._monitor_id:
+                    return m["index"]
+            return -1
+        legacy = int(self.config.get("monitor", -1) or -1)
+        if 0 <= legacy < len(monitors):
+            return legacy
+        return -1
+
     def _setup_platform(self):
         if is_wayland() and has_layer_shell_support():
             try:
                 GtkLayerShell.init_for_window(self)
                 GtkLayerShell.set_layer(self, GtkLayerShell.Layer.BACKGROUND)
-                GtkLayerShell.set_exclusive_zone(self, 0)
+                # -1 = ignore other surfaces' exclusive zones; with 0 the
+                # compositor still shrinks us by panel space (KWin gave
+                # 2560x1394 instead of the full 2560x1440).
+                GtkLayerShell.set_exclusive_zone(self, -1)
                 GtkLayerShell.set_keyboard_mode(
                     self, GtkLayerShell.KeyboardMode.NONE
                 )
@@ -177,12 +300,20 @@ class WallpaperWindow(Gtk.Window):
         self.stick()
         self._platform = "x11" if not is_wayland() else "wayland-fallback"
         self._size_to_screen()
-        print(f"[WebWallpaper] Using X11 fallback (platform={self._platform})")
+        if is_wayland():
+            print(
+                "[WebWallpaper] Using X11 desktop window via XWayland "
+                "(platform=wayland-fallback)"
+            )
+        else:
+            print(f"[WebWallpaper] Using X11 fallback (platform={self._platform})")
 
     def _size_to_screen(self):
         screen = self.get_screen()
         display = screen.get_display()
         n_monitors = display.get_n_monitors()
+        if n_monitors == 0:
+            return
         monitor_idx = self._monitor_index
 
         if monitor_idx >= 0 and monitor_idx < n_monitors:
@@ -211,8 +342,15 @@ class WallpaperWindow(Gtk.Window):
             self._size_to_screen()
 
     def set_monitor(self, monitor_index):
+        monitors = get_monitor_list()
         self._monitor_index = monitor_index
+        self._monitor_id = ""
+        for m in monitors:
+            if m["index"] == monitor_index:
+                self._monitor_id = m["id"]
+                break
         self.config["monitor"] = monitor_index
+        self.config["monitor_id"] = self._monitor_id
         config_store.save(self.config)
         if self._platform == "layer-shell":
             self._apply_layer_shell_monitor()
@@ -227,10 +365,18 @@ class WallpaperWindow(Gtk.Window):
         if display is None:
             return
         n_monitors = display.get_n_monitors()
-        if self._monitor_index >= 0 and self._monitor_index < n_monitors:
+        if 0 <= self._monitor_index < n_monitors:
             monitor = display.get_monitor(self._monitor_index)
         else:
-            monitor = display.get_monitor(0)
+            monitor = None
+            for i in range(n_monitors):
+                if display.get_monitor(i).is_primary():
+                    monitor = display.get_monitor(i)
+                    break
+            if monitor is None and n_monitors > 0:
+                monitor = display.get_monitor(0)
+        if monitor is None:
+            return
         GtkLayerShell.set_monitor(self, monitor)
         for edge in [
             GtkLayerShell.Edge.LEFT,

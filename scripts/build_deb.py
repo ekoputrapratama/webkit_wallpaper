@@ -32,7 +32,7 @@ ROOT = Path(__file__).resolve().parent.parent
 PKG = "webkit-wallpaper"
 BIN_NAME = "webkit_wallpaper"
 
-EXCLUDE_FILES = {".env"}          # never ship developer credentials
+EXCLUDE_FILES = {}          # never ship developer credentials
 EXCLUDE_DIRS = {"__pycache__", "debian", ".git"}
 
 CONTROL_TEMPLATE = """Package: {pkg}

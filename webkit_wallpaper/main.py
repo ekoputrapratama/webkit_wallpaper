@@ -3,10 +3,20 @@ import signal
 import sys
 
 
+def _is_wayland():
+    return os.environ.get("XDG_SESSION_TYPE") == "wayland"
+
+
+def _desktop_env():
+    return os.environ.get("XDG_CURRENT_DESKTOP", "").lower()
+
+
 def _is_gnome_wayland():
-    session = os.environ.get("XDG_SESSION_TYPE", "")
-    desktop = os.environ.get("XDG_CURRENT_DESKTOP", "").lower()
-    return session == "wayland" and "gnome" in desktop
+    return _is_wayland() and "gnome" in _desktop_env()
+
+
+def _is_kde_wayland():
+    return _is_wayland() and "kde" in _desktop_env()
 
 
 def _has_nvidia():
@@ -31,6 +41,14 @@ def _apply_platform_workarounds():
     if _has_nvidia():
         os.environ.setdefault("WEBKIT_DISABLE_DMABUF_RENDERER", "1")
 
+    # On GNOME Wayland, layer-shell is not supported by mutter and the X11
+    # fallback path (via XWayland) is needed for desktop window stacking
+    # (DESKTOP type hint). Force GDK_BACKEND=x11 so GTK uses XWayland,
+    # enabling X11 window manager hints that mutter respects.
+    # KDE KWin supports wlr-layer-shell natively, so KDE Wayland uses the
+    # native Wayland backend for better performance.
+    # wlroots-based compositors (Sway, Hyprland, etc.) also use layer-shell
+    # natively and must stay on the Wayland backend.
     if not _is_gnome_wayland():
         return
     if not os.environ.get("DISPLAY"):
