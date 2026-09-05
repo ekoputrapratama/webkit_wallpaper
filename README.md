@@ -20,7 +20,19 @@ A Linux desktop wallpaper app that renders web pages and WebGL shaders as your b
 - Auto-start on login
 - Dark/light theme support
 - Drag & drop `.zip` theme installation
+- **Auto-pause**: when another app is fullscreen, the wallpaper is paused (shown as a frozen screenshot) to free GPU/CPU, and resumes automatically when fullscreen closes
 - Works on X11 and Wayland (wlroots, COSMIC, KDE)
+
+## Desktop integration
+
+| Desktop        | Integration                                                                         | Tested | Auto pause |
+| -------------- | ----------------------------------------------------------------------------------- | :----: | :--------: |
+| **KDE Plasma** | [webwallpaper-kde](https://github.com/ekoputrapratama/webwallpaper-kde/)            |   ✅   |     ✅     |
+| **Hyprland**   | [webkit_wallpaper/layer_shell](https://github.com/ekoputrapratama/webkit_wallpaper) |   ❌   |     ❌     |
+| **Niri**       | [webkit_wallpaper/layer_shell](https://github.com/ekoputrapratama/webkit_wallpaper) |   ❌   |     ❌     |
+| **Wayfire**    | [webkit_wallpaper/layer_shell](https://github.com/ekoputrapratama/webkit_wallpaper) |   ❌   |     ❌     |
+| **COSMIC**     | [webkit_wallpaper/layer_shell](https://github.com/ekoputrapratama/webkit_wallpaper) |   ✅   |     ✅     |
+| **Sway**       | [webkit_wallpaper/layer_shell](https://github.com/ekoputrapratama/webkit_wallpaper) |   ❌   |     ❌     |
 
 ## Installation
 
@@ -45,9 +57,18 @@ sudo apt install python3-gi gir1.2-gtk-3.0 gir1.2-webkit2-4.1 \
 # Fallback (GTK-free appindicator, if the above is unavailable):
 sudo apt install gir1.2-ayatanaappindicatorglib-2.0
 
-# For Wayland
+# For Wayland layer-shell support (Sway, Hyprland, KDE Plasma 6, COSMIC)
 sudo apt install gir1.2-gtklayershell-0.1
+# Arch: sudo pacman -S gtk-layer-shell
+
+# For auto-pause on fullscreen (X11 / XWayland detection via EWMH):
+sudo apt install x11-utils
+# Arch: sudo pacman -S xorg-xprop
 ```
+
+**Important:** KDE Plasma 6 supports the wlr-layer-shell protocol, but you
+need the **GTK-specific bindings** (`gtk-layer-shell` / `gir1.2-gtklayershell-0.1`),
+not the Qt version (`layer-shell-qt`). The Qt version only works for Qt apps.
 
 The tray icon uses the classic dbusmenu-based appindicator libraries first,
 since GNOME Shell, KDE, XFCE and COSMIC panels all render those. The newer
@@ -162,7 +183,44 @@ Your theme will appear in the store for others to install.
 
 **Manually:** Extract a theme folder into `~/.local/share/webkit_wallpaper/themes/`.
 
+## Auto-pause on fullscreen
+
+By default the wallpaper pauses whenever another window goes fullscreen: it
+captures a frozen screenshot of the current frame, hides the webview, and
+shows the screenshot in its place so the WebKit web process stops rendering
+(no blank screen — the screenshot covers the window until the webview has
+finished reloading after you close the fullscreen app).
+
+- Toggle it from **Settings → Auto-pause on fullscreen**, or from the tray
+  menu's **Auto-pause on fullscreen** item.
+- Use the tray menu's **Pause**/**Resume** item to pause/resume manually.
+- Detection works via the X11 EWMH protocol, so it covers X11 sessions and
+  XWayland windows. It requires the `xprop` utility (`x11-utils` /
+  `xorg-xprop`); if it's missing, auto-pause logs a notice and stays off.
+  Native Wayland-only compositors that don't expose window state via EWMH
+  (e.g. GNOME Wayland) can't be detected this way.
+
 ## Troubleshooting
+
+### KDE Plasma — wallpaper behind panels/windows
+
+KDE Plasma 6 supports the `wlr-layer-shell` protocol, but the app needs the
+**GTK layer-shell bindings** (`gir1.2-gtklayershell-0.1` on Debian/Ubuntu,
+`gtk-layer-shell` on Arch). The Qt package `layer-shell-qt` only works for
+Qt apps and does not help here. If the wallpaper appears behind all windows,
+install the GTK bindings:
+
+```bash
+# Debian / Ubuntu
+sudo apt install gir1.2-gtklayershell-0.1
+
+# Arch Linux
+sudo pacman -S gtk-layer-shell
+```
+
+On KDE Plasma 5, the compositor does **not** support layer-shell. The app
+will fall back to X11 desktop window hints via XWayland, which works but
+may not be perfectly reliable.
 
 ### NVIDIA (proprietary driver)
 

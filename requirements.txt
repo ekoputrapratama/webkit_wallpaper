@@ -8,5 +8,15 @@
 # Arch Linux: gnome-shell-extension-appindicator (GNOME) or
 # libayatana-appindicator from the repos
 #
-# For Wayland (Sway, Hyprland, KDE Wayland):
+# For Wayland layer-shell support (Sway, Hyprland, KDE Plasma 6, COSMIC):
+# NOTE: KDE Plasma 6 supports the wlr-layer-shell protocol, but you still
+# need the GTK-specific bindings (NOT layer-shell-qt, which is Qt-only).
 # sudo apt install gir1.2-gtklayershell-0.1
+# Arch: yay -S gtk-layer-shell
+#
+# For auto-pause on fullscreen:
+#   - Wayland/COSMIC: no extra package (binds zcosmic_toplevel_info_v1
+#     through ctypes/libwayland-client, already present on Wayland systems).
+#   - X11/XWayland fallback detection (EWMH via xprop):
+#     sudo apt install x11-utils
+#     Arch: yay -S xorg-xprop

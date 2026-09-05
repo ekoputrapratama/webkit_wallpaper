@@ -1,3 +1,4 @@
+import logging
 import os
 import shutil
 import tempfile
@@ -14,6 +15,8 @@ from gi.repository import Gdk, GdkPixbuf, GLib, Gtk
 from webkit_wallpaper import config as config_mod
 from webkit_wallpaper import store
 from webkit_wallpaper import themes as themes_mod
+
+logger = logging.getLogger(__name__)
 
 THUMB_WIDTH = 240
 THUMB_HEIGHT = 140
@@ -98,6 +101,7 @@ _STORE_CSS = """
 
 
 def _init_store_css():
+    logger.debug("_init_store_css() called")
     css_provider = Gtk.CssProvider()
     css_provider.load_from_data(_STORE_CSS.encode("utf-8"))
     Gtk.StyleContext.add_provider_for_screen(
@@ -105,9 +109,11 @@ def _init_store_css():
         css_provider,
         Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION,
     )
+    logger.debug("_init_store_css() done")
 
 
 def _load_pixbuf_from_url(url, width=THUMB_WIDTH, height=THUMB_HEIGHT):
+    logger.debug("_load_pixbuf_from_url(url=%s, %dx%d)", url, width, height)
     try:
         req = urllib.request.Request(url)
         with urllib.request.urlopen(req, timeout=10) as resp:
@@ -116,8 +122,11 @@ def _load_pixbuf_from_url(url, width=THUMB_WIDTH, height=THUMB_HEIGHT):
         loader.write(data)
         loader.close()
         pixbuf = loader.get_pixbuf()
-        return _scale_cover(pixbuf, width, height)
-    except Exception:
+        result = _scale_cover(pixbuf, width, height)
+        logger.debug("_load_pixbuf_from_url() -> %dx%d", result.get_width(), result.get_height())
+        return result
+    except Exception as e:
+        logger.warning("_load_pixbuf_from_url() failed: %s", e)
         return None
 
 
@@ -134,6 +143,7 @@ def _scale_cover(pixbuf, target_w, target_h):
 
 
 def _make_placeholder(width=THUMB_WIDTH, height=THUMB_HEIGHT):
+    logger.debug("_make_placeholder(%dx%d)", width, height)
     surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, width, height)
     ctx = cairo.Context(surface)
     ctx.set_source_rgb(0.15, 0.15, 0.2)
@@ -152,11 +162,13 @@ _PLACEHOLDER_PATH = None
 def _make_placeholder_path():
     global _PLACEHOLDER_PATH
     if _PLACEHOLDER_PATH and os.path.isfile(_PLACEHOLDER_PATH):
+        logger.debug("_make_placeholder_path() returning cached: %s", _PLACEHOLDER_PATH)
         return _PLACEHOLDER_PATH
     pixbuf = _make_placeholder()
     tmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
     pixbuf.savev(tmp.name, "png", [], [])
     _PLACEHOLDER_PATH = tmp.name
+    logger.debug("_make_placeholder_path() created: %s", tmp.name)
     return tmp.name
 
 
@@ -164,14 +176,17 @@ import cairo
 
 
 def _download_zip(url):
+    logger.debug("_download_zip(url=%s)", url)
     tmp = tempfile.NamedTemporaryFile(suffix=".zip", delete=False)
     try:
         req = urllib.request.Request(url)
         with urllib.request.urlopen(req, timeout=30) as resp:
             shutil.copyfileobj(resp, tmp)
         tmp.close()
+        logger.debug("_download_zip() saved to %s", tmp.name)
         return tmp.name
-    except Exception:
+    except Exception as e:
+        logger.warning("_download_zip() failed: %s", e)
         tmp.close()
         os.unlink(tmp.name)
         return None
@@ -179,6 +194,7 @@ def _download_zip(url):
 
 class StoreWindow(Gtk.Window):
     def __init__(self, app):
+        logger.debug("StoreWindow.__init__() called")
         super().__init__(title="Wallpaper Store")
         self.app = app
         self.set_default_size(860, 640)
@@ -191,8 +207,10 @@ class StoreWindow(Gtk.Window):
         self._wallpapers = []
         self._filtered = []
         self._build_ui()
+        logger.debug("StoreWindow.__init__() done")
 
     def _build_ui(self):
+        logger.debug("StoreWindow._build_ui() called")
         vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
         self.add(vbox)
 
@@ -254,8 +272,10 @@ class StoreWindow(Gtk.Window):
         vbox.pack_start(self.status_bar, False, False, 0)
 
         self._show_placeholder()
+        logger.debug("StoreWindow._build_ui() done")
 
     def _show_placeholder(self):
+        logger.debug("StoreWindow._show_placeholder()")
         child = Gtk.FlowBoxChild()
         label = Gtk.Label(label="Open Settings to configure Firebase,\nthen click Refresh to browse wallpapers.")
         label.set_justify(Gtk.Justification.CENTER)
@@ -265,10 +285,12 @@ class StoreWindow(Gtk.Window):
         self.flow.show_all()
 
     def _clear_grid(self):
+        logger.debug("StoreWindow._clear_grid()")
         for child in self.flow.get_children():
             self.flow.remove(child)
 
     def _on_refresh(self, *_args):
+        logger.debug("StoreWindow._on_refresh()")
         self._clear_grid()
         self.status_bar.set_text("Loading wallpapers...")
         self.refresh_button.set_sensitive(False)
@@ -276,9 +298,11 @@ class StoreWindow(Gtk.Window):
         store.fetch_wallpapers_background(self._on_wallpapers_loaded)
 
     def _on_wallpapers_loaded(self, wallpapers, error):
+        logger.debug("StoreWindow._on_wallpapers_loaded() count=%d, error=%s", len(wallpapers), error)
         GLib.idle_add(self._apply_results, wallpapers, error)
 
     def _apply_results(self, wallpapers, error):
+        logger.debug("StoreWindow._apply_results() count=%d, error=%s", len(wallpapers), error)
         self.refresh_button.set_sensitive(True)
         self._clear_grid()
 
@@ -293,6 +317,7 @@ class StoreWindow(Gtk.Window):
 
     def _on_search_changed(self, entry):
         query = entry.get_text().strip().lower()
+        logger.debug("StoreWindow._on_search_changed(query=%r)", query)
         if not query:
             self._filtered = list(self._wallpapers)
         else:
@@ -309,6 +334,7 @@ class StoreWindow(Gtk.Window):
         self.status_bar.set_text(f"{len(self._filtered)} results")
 
     def _render_grid(self):
+        logger.debug("StoreWindow._render_grid() count=%d", len(self._filtered))
         if not self._filtered:
             child = Gtk.FlowBoxChild()
             label = Gtk.Label(label="No wallpapers found.")
@@ -324,6 +350,7 @@ class StoreWindow(Gtk.Window):
         self.flow.show_all()
 
     def _make_card(self, wp):
+        logger.debug("StoreWindow._make_card(wp=%s)", wp.get("name", "unknown"))
         card = Gtk.FlowBoxChild()
         card._wallpaper = wp
         card.set_valign(Gtk.Align.START)
@@ -432,6 +459,7 @@ class StoreWindow(Gtk.Window):
         return card
 
     def _load_thumb_bg(self, url, widget):
+        logger.debug("StoreWindow._load_thumb_bg(url=%s)", url)
         pixbuf = _load_pixbuf_from_url(url)
         if pixbuf is None:
             pixbuf = _make_placeholder()
@@ -439,6 +467,7 @@ class StoreWindow(Gtk.Window):
         GLib.idle_add(widget.queue_draw)
 
     def _load_gif_bg(self, url, widget):
+        logger.debug("StoreWindow._load_gif_bg(url=%s)", url)
         try:
             req = urllib.request.Request(url)
             with urllib.request.urlopen(req, timeout=15) as resp:
@@ -448,11 +477,13 @@ class StoreWindow(Gtk.Window):
             tmp.close()
             anim = GdkPixbuf.PixbufAnimation.new_from_file(tmp.name)
             GLib.idle_add(self._set_gif, widget, anim, tmp.name)
-        except Exception:
+        except Exception as e:
+            logger.warning("StoreWindow._load_gif_bg() failed: %s", e)
             anim = GdkPixbuf.PixbufAnimation.new_from_file(_make_placeholder_path())
             GLib.idle_add(self._set_gif, widget, anim, None)
 
     def _set_gif(self, widget, anim, tmp_path):
+        logger.debug("StoreWindow._set_gif(tmp_path=%s)", tmp_path)
         widget.set_from_animation(anim)
         if tmp_path:
             try:
@@ -474,13 +505,16 @@ class StoreWindow(Gtk.Window):
 
     def _on_donate(self, button, url):
         import webbrowser
+        logger.debug("StoreWindow._on_donate(url=%s)", url)
         webbrowser.open(url)
 
     def _is_applied(self, wp):
         config = self.app.config
-        return config.get("applied_store_id", "") == wp.get("id", "")
+        result = config.get("applied_store_id", "") == wp.get("id", "")
+        return result
 
     def _refresh_card_states(self):
+        logger.debug("StoreWindow._refresh_card_states() called")
         for child in self.flow.get_children():
             wp = getattr(child, "_wallpaper", None)
             apply_btn = getattr(child, "_apply_btn", None)
@@ -501,6 +535,7 @@ class StoreWindow(Gtk.Window):
     def _on_apply(self, button, wp):
         wp_type = wp.get("type", "url")
         url = wp.get("wallpaper_url", "")
+        logger.debug("StoreWindow._on_apply(name=%s, type=%s, url=%s)", wp.get("name"), wp_type, url)
 
         if wp_type == "theme" or url.endswith(".zip"):
             self.status_bar.set_text(f"Downloading: {wp.get('name', '')}...")
@@ -520,6 +555,7 @@ class StoreWindow(Gtk.Window):
         self.status_bar.set_text(f"Applied: {wp.get('name', '')}")
 
     def _apply_theme_background(self, wp, url):
+        logger.debug("StoreWindow._apply_theme_background(name=%s, url=%s)", wp.get("name"), url)
         zip_path = _download_zip(url)
         if zip_path is None:
             GLib.idle_add(self._apply_theme_done, wp, False, "Download failed")
@@ -531,6 +567,7 @@ class StoreWindow(Gtk.Window):
             else:
                 GLib.idle_add(self._apply_theme_done, wp, True, meta["id"])
         except Exception as e:
+            logger.error("StoreWindow._apply_theme_background() exception: %s", e)
             GLib.idle_add(self._apply_theme_done, wp, False, str(e))
         finally:
             try:
@@ -539,6 +576,7 @@ class StoreWindow(Gtk.Window):
                 pass
 
     def _apply_theme_done(self, wp, success, result):
+        logger.debug("StoreWindow._apply_theme_done(success=%s, result=%s)", success, result)
         if self.apply_button:
             self.apply_button.set_sensitive(True)
         if success:
@@ -551,10 +589,12 @@ class StoreWindow(Gtk.Window):
             self.status_bar.set_text(f"Failed: {result}")
 
     def _on_close(self, *_args):
+        logger.debug("StoreWindow._on_close()")
         self.hide()
         return True
 
     def present(self):
+        logger.debug("StoreWindow.present() called")
         self.show_all()
         super().present()
         if not self._wallpapers:

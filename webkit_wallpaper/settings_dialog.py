@@ -1,3 +1,4 @@
+import logging
 import os
 import urllib.parse
 
@@ -9,20 +10,27 @@ from gi.repository import Gdk, GdkPixbuf, Gtk
 from webkit_wallpaper import themes
 from webkit_wallpaper.wallpaper_window import get_monitor_list
 
+logger = logging.getLogger(__name__)
+
 THUMB_SIZE = 48
 
 
 def _load_thumbnail(path, size=THUMB_SIZE):
+    logger.debug("_load_thumbnail(path=%s, size=%d)", path, size)
     if not path or not os.path.isfile(path):
+        logger.debug("_load_thumbnail() -> None (invalid path)")
         return None
     try:
         pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(path, size, size, True)
+        logger.debug("_load_thumbnail() -> loaded %dx%d", pixbuf.get_width(), pixbuf.get_height())
         return pixbuf
-    except Exception:
+    except Exception as e:
+        logger.debug("_load_thumbnail() exception: %s", e)
         return None
 
 
 def _make_fallback_icon(size=THUMB_SIZE):
+    logger.debug("_make_fallback_icon(size=%d)", size)
     surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, size, size)
     ctx = cairo.Context(surface)
     ctx.set_source_rgb(0.3, 0.3, 0.4)
@@ -40,6 +48,7 @@ import cairo
 
 class SettingsDialog(Gtk.Window):
     def __init__(self, app):
+        logger.debug("SettingsDialog.__init__() called")
         super().__init__(title="WebKit Wallpaper Settings")
         self.app = app
         self.set_default_size(560, 480)
@@ -54,8 +63,10 @@ class SettingsDialog(Gtk.Window):
         self._themes = []
         self._build_ui()
         self._setup_dnd()
+        logger.debug("SettingsDialog.__init__() done")
 
     def _build_ui(self):
+        logger.debug("SettingsDialog._build_ui() called")
         vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
         vbox.set_margin_start(12)
         vbox.set_margin_end(12)
@@ -133,6 +144,12 @@ class SettingsDialog(Gtk.Window):
         self.hwaccel_check.connect("toggled", self._on_hwaccel_toggled)
         settings_box.pack_start(self.hwaccel_check, False, False, 0)
 
+        self.autopause_check = Gtk.CheckButton(
+            label="Auto-pause on fullscreen")
+        self.autopause_check.set_active(self.app.config.get("auto_pause", True))
+        self.autopause_check.connect("toggled", self._on_autopause_toggled)
+        settings_box.pack_start(self.autopause_check, False, False, 0)
+
         self.fps_values = [0, 60, 30, 24, 15]
         self.fps_combo = Gtk.ComboBoxText()
         for label in ["FPS: Uncapped", "FPS: 60", "FPS: 30", "FPS: 24", "FPS: 15"]:
@@ -163,8 +180,10 @@ class SettingsDialog(Gtk.Window):
         store_button = Gtk.Button(label="Open Store")
         store_button.connect("clicked", self._on_open_store)
         bottom_box.pack_end(store_button, False, False, 0)
+        logger.debug("SettingsDialog._build_ui() done")
 
     def _populate_themes(self):
+        logger.debug("SettingsDialog._populate_themes() called")
         for child in self.theme_list.get_children():
             self.theme_list.remove(child)
 
@@ -172,6 +191,7 @@ class SettingsDialog(Gtk.Window):
         active_theme = self.app.config.get("active_theme", "")
 
         if not self._themes:
+            logger.debug("SettingsDialog._populate_themes() no themes found, showing placeholder")
             row = Gtk.ListBoxRow()
             row.set_selectable(False)
             label = Gtk.Label(label="No themes found. Drop a .zip above to install.")
@@ -190,8 +210,10 @@ class SettingsDialog(Gtk.Window):
             self.theme_list.add(row)
 
         self.theme_list.show_all()
+        logger.debug("SettingsDialog._populate_themes() added %d theme rows", len(self._themes))
 
     def _make_theme_row(self, theme):
+        logger.debug("SettingsDialog._make_theme_row(theme=%s)", theme.get("id", "unknown"))
         row = Gtk.ListBoxRow()
         hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         hbox.set_margin_start(6)
@@ -233,6 +255,7 @@ class SettingsDialog(Gtk.Window):
         return row
 
     def _setup_dnd(self):
+        logger.debug("SettingsDialog._setup_dnd() called")
         targets = [Gtk.TargetEntry.new("text/uri-list", 0, 0)]
         self.theme_list.drag_dest_set(
             Gtk.DestDefaults.ALL, targets, Gdk.DragAction.COPY
@@ -241,6 +264,7 @@ class SettingsDialog(Gtk.Window):
 
     def _on_drag_data_received(self, widget, drag_context, x, y, data, info, time):
         uris = data.get_uris()
+        logger.debug("SettingsDialog._on_drag_data_received() uris=%s", uris)
         if not uris:
             return
 
@@ -248,16 +272,20 @@ class SettingsDialog(Gtk.Window):
             parsed = urllib.parse.urlparse(uri)
             path = urllib.parse.unquote(parsed.path)
             if not path.lower().endswith(".zip"):
+                logger.debug("SettingsDialog._on_drag_data_received() skipping non-zip: %s", path)
                 continue
             self._install_zip(path)
 
         Gtk.drag_finish(drag_context, True, False, time)
 
     def _install_zip(self, zip_path):
+        logger.debug("SettingsDialog._install_zip(zip_path=%s)", zip_path)
         meta, error = themes.install_theme(zip_path)
         if error:
+            logger.warning("SettingsDialog._install_zip() install failed: %s", error)
             self.status_label.set_text(f"Install failed: {error}")
             return
+        logger.debug("SettingsDialog._install_zip() installed: %s", meta["name"])
         self.status_label.set_text(f"Installed: {meta['name']}")
         self._populate_themes()
 
@@ -266,32 +294,40 @@ class SettingsDialog(Gtk.Window):
             return
         theme_id = getattr(row, "_theme_id", None)
         if theme_id:
+            logger.debug("SettingsDialog._on_theme_selected(theme_id=%s)", theme_id)
             self.app.wallpaper.load_theme(theme_id)
             self._update_status()
 
     def _on_load_url(self, *_args):
         url = self.url_entry.get_text().strip()
+        logger.debug("SettingsDialog._on_load_url(url=%s)", url)
         self.app.wallpaper.load_url(url)
         self._update_status()
 
     def _on_mute_toggled(self, check):
-        self.app.wallpaper.set_muted(check.get_active())
+        active = check.get_active()
+        logger.debug("SettingsDialog._on_mute_toggled(active=%s)", active)
+        self.app.wallpaper.set_muted(active)
 
     def _on_hwaccel_toggled(self, check):
-        self.app.wallpaper.set_hardware_accel(check.get_active())
+        active = check.get_active()
+        logger.debug("SettingsDialog._on_hwaccel_toggled(active=%s)", active)
+        self.app.wallpaper.set_hardware_accel(active)
+
+    def _on_autopause_toggled(self, check):
+        active = check.get_active()
+        logger.debug("SettingsDialog._on_autopause_toggled(active=%s)", active)
+        self.app.set_auto_pause(active)
 
     def _on_fps_changed(self, combo):
         active = combo.get_active()
         if 0 <= active < len(self.fps_values):
-            self.app.wallpaper.set_fps_cap(self.fps_values[active])
+            fps = self.fps_values[active]
+            logger.debug("SettingsDialog._on_fps_changed(fps=%d)", fps)
+            self.app.wallpaper.set_fps_cap(fps)
 
     def _fill_monitor_combo(self):
-        """Populate the display combo and select the saved monitor.
-
-        Selection prefers the stable per-monitor id (connector name or
-        manufacturer+model) so the choice survives logout/login, where
-        enumeration order and count may change.
-        """
+        logger.debug("SettingsDialog._fill_monitor_combo() called")
         self.monitor_combo.handler_block_by_func(self._on_monitor_changed)
         try:
             self.monitor_combo.remove_all()
@@ -311,6 +347,7 @@ class SettingsDialog(Gtk.Window):
                 if 0 <= legacy < len(self._monitors):
                     active = legacy + 1
             self.monitor_combo.set_active(active)
+            logger.debug("SettingsDialog._fill_monitor_combo() selected index=%d", active)
         finally:
             self.monitor_combo.handler_unblock_by_func(self._on_monitor_changed)
 
@@ -320,6 +357,7 @@ class SettingsDialog(Gtk.Window):
             monitor_index = -1
         else:
             monitor_index = active - 1
+        logger.debug("SettingsDialog._on_monitor_changed(combo_active=%d, monitor_index=%d)", active, monitor_index)
         self.app.wallpaper.set_monitor(monitor_index)
 
     def _update_status(self):
@@ -333,13 +371,16 @@ class SettingsDialog(Gtk.Window):
             self.status_label.set_text("No URL set — showing fallback animation")
 
     def _on_close(self, *_args):
+        logger.debug("SettingsDialog._on_close()")
         self.hide()
         return True
 
     def _on_open_store(self, *_args):
+        logger.debug("SettingsDialog._on_open_store()")
         self.app.show_store()
 
     def present(self):
+        logger.debug("SettingsDialog.present() called")
         self.url_entry.set_text(self.app.config.get("url", ""))
         self._populate_themes()
         self._refresh_monitor_combo()
@@ -348,5 +389,6 @@ class SettingsDialog(Gtk.Window):
         super().present()
 
     def _refresh_monitor_combo(self):
+        logger.debug("SettingsDialog._refresh_monitor_combo()")
         self._monitors = get_monitor_list()
         self._fill_monitor_combo()

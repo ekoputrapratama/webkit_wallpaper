@@ -5,4 +5,6 @@ dist/
 build/
 .env
 webkit_wallpaper/.env
+.session/
 packaging/
+resume.txt
