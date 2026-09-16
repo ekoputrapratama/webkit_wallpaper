@@ -1,0 +1,106 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    name: Tests (headless)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system deps (gi / GTK / WebKit)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            python3-venv python3-gi python3-gi-cairo \
+            gir1.2-gtk-3.0 gir1.2-webkit2-4.1 \
+            gir1.2-ayatanaappindicator3-0.1 \
+            gir1.2-gtklayershell-0.1
+
+      - name: Set up Python (system-site-packages for gi)
+        run: |
+          python3 -m venv --system-site-packages .venv
+          .venv/bin/python -m pip install -U pip
+          .venv/bin/python -m pip install pytest
+
+      - name: Install project
+        run: .venv/bin/python -m pip install -e .
+
+      - name: Run headless test suite
+        run: .venv/bin/python -m pytest -q
+
+      - name: Upload test results artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytest-report
+          path: |
+            .pytest_cache/
+            **/__pycache__/
+          if-no-files-found: ignore
+
+  build-deb:
+    name: Build .deb
+    needs: test
+    runs-on: ubuntu-latest
+    outputs:
+      deb-name: ${{ steps.deb.outputs.deb-name }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Debian package (pure stdlib)
+        id: deb
+        run: |
+          python3 scripts/build_deb.py
+          DEB=$(ls dist/webkit_wallpaper_*.deb)
+          echo "deb-path=${DEB}" >> "$GITHUB_OUTPUT"
+          echo "deb-name=$(basename "$DEB")" >> "$GITHUB_OUTPUT"
+
+      - name: Show package contents
+        run: |
+          ls -lh dist/*.deb
+          python3 - <<'PY'
+          import tarfile, io, subprocess, re
+          import lzma
+          with open([p for p in __import__('glob').glob('dist/*.deb')][0], 'rb') as f:
+              data = f.read()
+          print("deb bytes:", len(data))
+          PY
+
+      - name: Upload .deb artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: webkit-wallpaper-deb
+          path: $(ls dist/webkit_wallpaper_*.deb)
+          if-no-files-found: error
+
+  release:
+    name: GitHub Release
+    needs: build-deb
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download .deb
+        uses: actions/download-artifact@v4
+        with:
+          name: webkit-wallpaper-deb
+          path: dist
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          prerelease: false
+          draft: false
+          files: dist/*.deb
+          generate_release_notes: true

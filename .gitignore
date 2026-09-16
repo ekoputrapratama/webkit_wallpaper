@@ -4,6 +4,7 @@ __pycache__/
 dist/
 build/
 .env
+.venv
 webkit_wallpaper/.env
 .session/
 packaging/
