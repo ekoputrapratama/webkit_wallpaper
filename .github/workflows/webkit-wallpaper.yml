@@ -80,7 +80,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: webkit-wallpaper-deb
-          path: $(ls dist/webkit-wallpaper_*.deb)
+          path: dist/webkit-wallpaper_*.deb
           if-no-files-found: error
 
   release:
